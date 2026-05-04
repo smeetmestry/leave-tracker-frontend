@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leave Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .card { @apply bg-white rounded-lg shadow-lg p-6 mb-4 hover:shadow-xl transition-all; }
+        .btn { @apply px-4 py-2 rounded font-medium cursor-pointer transition-all transform hover:scale-105 active:scale-95; }
+        .badge { @apply inline-block px-3 py-1 rounded-full text-sm font-semibold; }
+        .input { @apply border-2 border-gray-200 px-4 py-2 rounded-lg focus:border-blue-500 focus:outline-none transition; }
+        nav { @apply bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg; }
+        .tab-active { @apply bg-blue-600 text-white shadow-md; }
+        .tab-inactive { @apply bg-gray-200 text-gray-700 hover:bg-gray-300; }
+        .request-card { @apply bg-gradient-to-r from-blue-50 to-white border-l-4 border-blue-500 rounded-lg shadow p-6 mb-4 hover:shadow-lg transition; }
+        .balance-card { @apply bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg shadow p-6 text-center hover:shadow-xl transition transform hover:scale-105; }
+        .nav-text { @apply text-white font-semibold; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script>
+        const API = "http://localhost:8000/api";
+        let currentUser = null;
+        let appState = { tab: "balance", balance: [], history: [], managers: [], pending: [], teamCalendar: [], insights: "" };
+
+        function renderLogin() {
+            document.getElementById("root").innerHTML = `
+                <div class="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
+                    <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+                        <h1 class="text-4xl font-bold text-center mb-2 text-blue-600">📋 Leave Tracker</h1>
+                        <p class="text-center text-gray-500 mb-8">Manage your leaves efficiently</p>
+                        <input type="text" id="username" placeholder="Username" class="input w-full mb-3" value="john_smith">
+                        <input type="password" id="password" placeholder="Password" class="input w-full mb-3" value="password123">
+                        <div id="error" class="text-red-600 text-sm mb-4 text-center"></div>
+                        <button onclick="handleLogin()" class="btn btn-primary w-full bg-blue-600 text-white hover:bg-blue-700">Login</button>
+                        <hr class="my-4">
+                        <p class="text-xs text-gray-500 text-center mb-2">🧑 Employee: john_smith</p>
+                        <p class="text-xs text-gray-500 text-center">👨‍💼 Manager: alice_manager</p>
+                        <p class="text-xs text-gray-500 text-center mt-2">Password: password123</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function handleLogin() {
+            const username = document.getElementById("username").value;
+            const password = document.getElementById("password").value;
+            const errorDiv = document.getElementById("error");
+            try {
+                const response = await fetch(`${API}/auth/login?username=${username}&password=${password}`, { method: "POST" });
+                const data = await response.json();
+                if (response.ok) {
+                    currentUser = data;
+                    await loadData();
+                    data.is_manager ? renderManagerDashboard() : renderEmployeeDashboard();
+                } else {
+                    errorDiv.textContent = "❌ " + (data.detail || "Login failed");
+                }
+            } catch (err) {
+                errorDiv.textContent = "API error: " + err.message;
+            }
+        }
+
+        async function loadData() {
+            try {
+                const [balRes, histRes, manRes] = await Promise.all([
+                    fetch(`${API}/leaves/balance/${currentUser.id}`),
+                    fetch(`${API}/leaves/history/${currentUser.id}`),
+                    fetch(`${API}/auth/managers`)
+                ]);
+                appState.balance = await balRes.json();
+                appState.history = await histRes.json();
+                appState.managers = await manRes.json();
+
+                if (currentUser.is_manager) {
+                    const [pendRes, calRes, insRes] = await Promise.all([
+                        fetch(`${API}/manager/pending/${currentUser.id}`),
+                        fetch(`${API}/leaves/team-calendar`),
+                        fetch(`${API}/ai/team-insights/${currentUser.id}`)
+                    ]);
+                    appState.pending = await pendRes.json();
+                    appState.teamCalendar = await calRes.json();
+                    const insData = await insRes.json();
+                    appState.insights = insData.insights;
+                }
+            } catch (err) {
+                console.error("Load error", err);
+            }
+        }
+
+        function renderEmployeeDashboard() {
+            const balanceHTML = appState.balance.map(b => `
+                <div class="balance-card">
+                    <div class="text-sm opacity-90 font-semibold">${b.leave_type}</div>
+                    <div class="text-5xl font-bold mt-2">${b.available}</div>
+                    <div class="text-xs opacity-75">of ${b.yearly_quota} days</div>
+                </div>
+            `).join('');
+
+            const historyHTML = appState.history.map(h => `
+                <div class="request-card">
+                    <div class="flex justify-between">
+                        <div>
+                            <div class="font-bold text-lg">${h.leave_type}</div>
+                            <span class="badge ${h.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' : h.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${h.status}</span>
+                            <div class="text-sm text-gray-600 mt-2">📅 ${h.start_date} to ${h.end_date}</div>
+                            <div class="text-sm text-gray-600">⏱️ ${h.working_days} working days</div>
+                            <div class="text-sm text-gray-500 mt-2 italic">"${h.reason}"</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            const managersHTML = appState.managers.map(m => `<option value="${m.id}">${m.full_name}</option>`).join('');
+
+            document.getElementById("root").innerHTML = `
+                <div class="min-h-screen bg-gray-100">
+                    <nav class="text-white shadow-lg">
+                        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                            <h1 class="text-3xl font-bold">📋 Leave Tracker</h1>
+                            <div class="flex gap-4 items-center">
+                                <span class="nav-text">👤 ${currentUser.full_name}</span>
+                                <button onclick="handleLogout()" class="btn bg-red-500 text-white hover:bg-red-600">Logout</button>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <div class="max-w-7xl mx-auto px-4 py-8">
+                        <div class="flex gap-2 mb-6 flex-wrap">
+                            <button onclick="switchTab('balance')" class="btn ${appState.tab === 'balance' ? 'tab-active' : 'tab-inactive'}">💰 Balance</button>
+                            <button onclick="switchTab('apply')" class="btn ${appState.tab === 'apply' ? 'tab-active' : 'tab-inactive'}">📝 Apply Leave</button>
+                            <button onclick="switchTab('history')" class="btn ${appState.tab === 'history' ? 'tab-active' : 'tab-inactive'}">📊 History</button>
+                        </div>
+
+                        ${appState.tab === 'balance' ? `
+                            <div>
+                                <h2 class="text-2xl font-bold mb-6">Your Leave Balance</h2>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    ${balanceHTML}
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        ${appState.tab === 'apply' ? `
+                            <div class="max-w-3xl">
+                                <h2 class="text-2xl font-bold mb-6">Apply for Leave</h2>
+                                <div class="card bg-gradient-to-r from-purple-50 to-blue-50">
+                                    <h3 class="font-bold text-lg mb-4">🤖 AI Natural Language Parser</h3>
+                                    <input type="text" id="aiInput" placeholder="e.g., I need Monday and Tuesday off for a family function" class="input w-full mb-3">
+                                    <button onclick="handleAiParse()" class="btn bg-purple-600 text-white hover:bg-purple-700">✨ Parse with AI</button>
+                                    <div id="ai-success" style="display:none;" class="bg-green-100 text-green-800 p-3 rounded mt-3">✓ Parsed successfully! Form is pre-filled.</div>
+                                </div>
+
+                                <div class="card mt-6">
+                                    <h3 class="font-bold text-lg mb-4">Or fill manually:</h3>
+                                    <label class="block text-sm font-bold mb-2">Leave Type</label>
+                                    <select id="leaveType" class="input w-full mb-4">
+                                        <option>Sick</option>
+                                        <option selected>Casual</option>
+                                        <option>Work From Home</option>
+                                        <option>Comp-off</option>
+                                    </select>
+
+                                    <label class="block text-sm font-bold mb-2">Start Date</label>
+                                    <input type="date" id="startDate" class="input w-full mb-4">
+
+                                    <label class="block text-sm font-bold mb-2">End Date</label>
+                                    <input type="date" id="endDate" class="input w-full mb-4">
+
+                                    <label class="block text-sm font-bold mb-2">Reason</label>
+                                    <textarea id="reason" placeholder="Why do you need this leave?" class="input w-full mb-4" rows="3"></textarea>
+
+                                    <label class="block text-sm font-bold mb-2">Manager</label>
+                                    <select id="manager" class="input w-full mb-4">
+                                        ${managersHTML}
+                                    </select>
+
+                                    <button onclick="handleApply()" class="btn bg-blue-600 text-white hover:bg-blue-700 w-full font-bold">✅ Submit Application</button>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        ${appState.tab === 'history' ? `
+                            <div>
+                                <h2 class="text-2xl font-bold mb-6">Leave History</h2>
+                                ${historyHTML || '<p class="text-gray-500 text-lg">📭 No requests yet</p>'}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderManagerDashboard() {
+            const pendingHTML = appState.pending.map(req => `
+                <div class="request-card">
+                    <div class="flex justify-between items-start gap-4 flex-wrap">
+                        <div class="flex-1">
+                            <div class="font-bold text-lg">👤 ${req.applicant_name}</div>
+                            <div class="text-sm text-gray-600 mt-1">📅 ${req.leave_type} • ${req.start_date} to ${req.end_date}</div>
+                            <div class="text-sm text-gray-500 mt-2">"${req.reason}"</div>
+                        </div>
+                        <div class="min-w-64">
+                            <textarea id="comment-${req.id}" placeholder="Add a comment..." class="input w-full text-sm mb-2" rows="2"></textarea>
+                            <div class="flex gap-2">
+                                <button onclick="handleApprove(${req.id})" class="btn bg-green-600 text-white hover:bg-green-700 flex-1">✅ Approve</button>
+                                <button onclick="handleReject(${req.id})" class="btn bg-red-600 text-white hover:bg-red-700 flex-1">❌ Reject</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            const calendarHTML = appState.teamCalendar.map(leave => `
+                <div class="request-card">
+                    <div class="font-bold">👤 ${leave.employee_name}</div>
+                    <div class="text-sm text-gray-600 mt-1">📅 ${leave.leave_type}</div>
+                    <div class="text-sm text-gray-500">${leave.start_date} → ${leave.end_date}</div>
+                </div>
+            `).join('');
+
+            document.getElementById("root").innerHTML = `
+                <div class="min-h-screen bg-gray-100">
+                    <nav class="text-white shadow-lg">
+                        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                            <h1 class="text-3xl font-bold">👨‍💼 Manager Dashboard</h1>
+                            <div class="flex gap-4">
+                                <span class="nav-text">👤 ${currentUser.full_name}</span>
+                                <button onclick="handleLogout()" class="btn bg-red-500 text-white hover:bg-red-600">Logout</button>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <div class="max-w-7xl mx-auto px-4 py-8">
+                        <div class="flex gap-2 mb-6 flex-wrap">
+                            <button onclick="switchTab('pending')" class="btn ${appState.tab === 'pending' ? 'tab-active' : 'tab-inactive'}">⏳ Pending (${appState.pending.length})</button>
+                            <button onclick="switchTab('calendar')" class="btn ${appState.tab === 'calendar' ? 'tab-active' : 'tab-inactive'}">📅 Team Calendar</button>
+                            <button onclick="switchTab('insights')" class="btn ${appState.tab === 'insights' ? 'tab-active' : 'tab-inactive'}">🤖 AI Insights</button>
+                        </div>
+
+                        ${appState.tab === 'pending' ? `
+                            <div>
+                                <h2 class="text-2xl font-bold mb-6">Pending Requests</h2>
+                                ${pendingHTML || '<p class="text-gray-500 text-lg">✅ No pending requests</p>'}
+                            </div>
+                        ` : ''}
+
+                        ${appState.tab === 'calendar' ? `
+                            <div>
+                                <h2 class="text-2xl font-bold mb-6">Team Calendar</h2>
+                                ${calendarHTML || '<p class="text-gray-500 text-lg">📭 No leaves scheduled</p>'}
+                            </div>
+                        ` : ''}
+
+                        ${appState.tab === 'insights' ? `
+                            <div class="card bg-gradient-to-r from-purple-50 to-blue-50">
+                                <h2 class="text-2xl font-bold mb-4">🤖 AI Team Insights</h2>
+                                <p class="text-gray-700 leading-relaxed">${appState.insights || '⏳ Loading insights...'}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function switchTab(tab) {
+            appState.tab = tab;
+            currentUser.is_manager ? renderManagerDashboard() : renderEmployeeDashboard();
+        }
+
+        function handleLogout() {
+            currentUser = null;
+            renderLogin();
+        }
+
+        async function handleApply() {
+            const leaveType = document.getElementById("leaveType").value;
+            const startDate = document.getElementById("startDate").value;
+            const endDate = document.getElementById("endDate").value;
+            const reason = document.getElementById("reason").value;
+            const manager = document.getElementById("manager").value;
+
+            if (!startDate || !endDate || !manager) {
+                alert("❌ Fill all required fields");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API}/leaves/apply`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: `user_id=${currentUser.id}&leave_type=${leaveType}&start_date=${startDate}&end_date=${endDate}&reason=${reason}&manager_id=${manager}`
+                });
+
+                if (response.ok) {
+                    alert("✅ Leave request submitted successfully!");
+                    document.getElementById("startDate").value = "";
+                    document.getElementById("endDate").value = "";
+                    document.getElementById("reason").value = "";
+                    document.getElementById("aiInput").value = "";
+                    document.getElementById("ai-success").style.display = "none";
+                    await loadData();
+                    renderEmployeeDashboard();
+                } else {
+                    const err = await response.json();
+                    alert("❌ " + err.detail);
+                }
+            } catch (err) {
+                alert("❌ Failed: " + err.message);
+            }
+        }
+
+        async function handleAiParse() {
+            const aiInput = document.getElementById("aiInput").value;
+            if (!aiInput) {
+                alert("❌ Please enter text to parse");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API}/ai/parse-leave?user_input=${encodeURIComponent(aiInput)}&user_id=${currentUser.id}`, { method: "POST" });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById("leaveType").value = data.parsed.leave_type;
+                    document.getElementById("startDate").value = data.parsed.start_date;
+                    document.getElementById("endDate").value = data.parsed.end_date;
+                    document.getElementById("reason").value = data.parsed.reason;
+                    document.getElementById("ai-success").style.display = "block";
+                } else {
+                    alert("❌ " + data.error);
+                }
+            } catch (err) {
+                alert("❌ AI parsing failed: " + err.message);
+            }
+        }
+
+        async function handleApprove(requestId) {
+            const comment = document.getElementById(`comment-${requestId}`).value;
+            try {
+                const response = await fetch(`${API}/manager/approve/${requestId}?manager_id=${currentUser.id}&comment=${encodeURIComponent(comment)}`, { method: "POST" });
+                if (response.ok) {
+                    alert("✅ Request approved!");
+                    await loadData();
+                    renderManagerDashboard();
+                }
+            } catch (err) {
+                alert("❌ Error: " + err.message);
+            }
+        }
+
+        async function handleReject(requestId) {
+            const comment = document.getElementById(`comment-${requestId}`).value;
+            try {
+                const response = await fetch(`${API}/manager/reject/${requestId}?manager_id=${currentUser.id}&comment=${encodeURIComponent(comment)}`, { method: "POST" });
+                if (response.ok) {
+                    alert("✅ Request rejected");
+                    await loadData();
+                    renderManagerDashboard();
+                }
+            } catch (err) {
+                alert("❌ Error: " + err.message);
+            }
+        }
+
+        renderLogin();
+    </script>
+</body>
+</html>
