@@ -4,4 +4,3 @@ FastAPI backend for leave management system with AI-powered natural language par
 
 ## Setup
 
-```bash
