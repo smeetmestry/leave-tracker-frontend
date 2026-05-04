@@ -1,171 +1,144 @@
-# Leave Tracker - Backend
+# Leave Tracker - Frontend
 
-FastAPI backend for leave management system with AI-powered natural language parsing.
+React frontend for leave management system. Single-file HTML app with no build step.
 
 ## Setup
 
+Simply open `index.html` in a browser. No installation required.
+
+If using a local server:
 ```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-python seed.py
-python -m uvicorn main:app --reload
+cd frontend
+python -m http.server 3000
 ```
 
-API runs at: http://localhost:8000
-Docs: http://localhost:8000/docs
+Open: http://localhost:3000
 
 ## Project Structure
-backend/
-├── main.py                 # FastAPI app, routes
-├── database.py             # SQLAlchemy setup
-├── seed.py                 # Seed 20 users + 22 requests
-├── utils.py                # Helper functions (working days calc)
-├── models/
-│   ├── models.py           # User, LeaveBalance, LeaveRequest
-├── routes/
-│   ├── auth.py             # Login, register
-│   ├── leaves.py           # Apply, balance, history, calendar
-│   ├── manager.py          # Approve, reject
-│   ├── ai_assistant.py     # AI endpoints
-├── services/
-│   ├── ai_service.py       # Groq integration
-└── requirements.txt        # Dependencies
+frontend/
+├── index.html          # Entire React app (no build step)
+│   ├── Styles          # Tailwind CSS + custom styles
+│   ├── React Components (inline)
+│   │   ├── LoginScreen
+│   │   ├── EmployeeDashboard
+│   │   ├── ManagerDashboard
+│   └── API calls       # Fetch to FastAPI backend
 
-## Database Schema
+## Features
 
-### Users Table
-```sql
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
-    username VARCHAR UNIQUE,
-    email VARCHAR UNIQUE,
-    hashed_password VARCHAR,
-    full_name VARCHAR,
-    is_manager BOOLEAN DEFAULT FALSE,
-    created_at DATETIME
-);
-```
+### Employee Dashboard
+- **Balance Tab**: View leave balance for all 4 types
+- **Apply Leave Tab**: 
+  - AI Natural Language Parser ("I need Monday off" → auto-fills)
+  - Manual form (Leave type, dates, reason, manager)
+  - Submit to manager
+- **History Tab**: View past/pending/approved leaves with status
 
-### LeaveBalance Table
-```sql
-CREATE TABLE leave_balances (
-    id INTEGER PRIMARY KEY,
-    user_id INTEGER FOREIGN KEY,
-    leave_type ENUM(Sick, Casual, WFH, Comp-off),
-    yearly_quota INTEGER DEFAULT 10,
-    used INTEGER DEFAULT 0
-);
-```
+### Manager Dashboard
+- **Pending Tab**: Review pending requests, approve/reject with comments
+- **Team Calendar Tab**: See who's off this week/next week
+- **AI Insights Tab**: AI-generated summary of team availability
 
-### LeaveRequest Table
-```sql
-CREATE TABLE leave_requests (
-    id INTEGER PRIMARY KEY,
-    applicant_id INTEGER FOREIGN KEY,
-    leave_type ENUM(Sick, Casual, WFH, Comp-off),
-    start_date DATE,
-    end_date DATE,
-    reason TEXT,
-    working_days INTEGER,
-    status ENUM(Pending, Approved, Rejected),
-    manager_id INTEGER FOREIGN KEY,
-    approved_by_id INTEGER FOREIGN KEY (nullable),
-    manager_comment TEXT (nullable),
-    created_at DATETIME,
-    decided_at DATETIME (nullable)
-);
-```
+## API Calls
 
-## API Endpoints
-
-### Auth
-- `POST /api/auth/login?username=X&password=Y` - Login user
-- `POST /api/auth/register` - Register new user
-- `GET /api/auth/managers` - List all managers
-
-### Leaves
-- `POST /api/leaves/apply` - Apply for leave
-- `GET /api/leaves/balance/{user_id}` - Get leave balance
-- `GET /api/leaves/history/{user_id}` - Get history (filterable by status)
-- `GET /api/leaves/team-calendar` - Get team leaves (this week + next)
-
-### Manager
-- `GET /api/manager/pending/{manager_id}` - Pending requests
-- `GET /api/manager/all/{manager_id}` - All requests
-- `POST /api/manager/approve/{request_id}?comment=X` - Approve
-- `POST /api/manager/reject/{request_id}?comment=X` - Reject
-
-### AI
-- `POST /api/ai/parse-leave?user_input=X&user_id=Y` - Parse natural language
-- `GET /api/ai/team-insights/{manager_id}` - AI summary of team leaves
-
-## Example Requests
+All calls to: `http://localhost:8000/api`
 
 **Login**
-```bash
-curl -X POST "http://localhost:8000/api/auth/login?username=john_smith&password=password123"
+```javascript
+fetch(`${API}/auth/login?username=X&password=Y`, { method: "POST" })
 ```
 
 **Apply Leave**
-```bash
-curl -X POST "http://localhost:8000/api/leaves/apply" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "user_id=4&leave_type=Casual&start_date=2025-01-20&end_date=2025-01-21&reason=Family function&manager_id=1"
+```javascript
+fetch(`${API}/leaves/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `user_id=4&leave_type=Casual&start_date=2025-01-20&end_date=2025-01-21&reason=Family&manager_id=1`
+})
 ```
 
 **Parse with AI**
-```bash
-curl -X POST "http://localhost:8000/api/ai/parse-leave?user_input=I%20need%20Monday%20off&user_id=4"
+```javascript
+fetch(`${API}/ai/parse-leave?user_input=I need Monday off&user_id=4`, { method: "POST" })
 ```
 
-## Key Features
-
-- ✅ Working days calculation (Mon-Fri only, excludes holidays)
-- ✅ AI natural language parsing (Groq Llama 3.3 70B)
-- ✅ Server-side validation (never trust client)
-- ✅ Manager approval workflow with comments
-- ✅ Team calendar view
-- ✅ Leave balance tracking per type
-- ✅ Holiday calendar integration
+**Approve Request**
+```javascript
+fetch(`${API}/manager/approve/5?manager_id=1&comment=Approved`, { method: "POST" })
+```
 
 ## Tech Stack
 
-- **Framework**: FastAPI
-- **Database**: SQLite (SQLAlchemy ORM)
-- **Auth**: Simple hash (demo only, use bcrypt in production)
-- **AI**: Groq API (Llama 3.3 70B)
-- **Validation**: Pydantic
+- **Framework**: React 18 (via CDN, no build)
+- **Styling**: Tailwind CSS (CDN)
+- **State**: JavaScript objects + function re-renders
+- **API**: Fetch API (no axios)
 
-## Environment Variables
-GROQ_API_KEY=your_key_here
-SECRET_KEY=your_secret
-DATABASE_URL=sqlite:///./leave_tracker.db
+## Design Decisions
+
+**Why single file?**
+- No build step needed
+- Easy to demo locally
+- Works instantly in any browser
+- Minimal setup
+
+**Why no state management (Redux, Context)?**
+- 4-hour constraint
+- Simple data flow
+- App-level state in `appState` object
+
+**Why Tailwind CDN?**
+- Instant styling
+- No CSS files to manage
+- Responsive design built-in
+
+## Styling
+
+Custom classes:
+- `.balance-card` - Gradient blue cards for balance display
+- `.request-card` - Left-border cards for requests
+- `.tab-active` / `.tab-inactive` - Tab styling
+- `.input` - Form input styling
+
+Tailwind utilities for responsive design (md:, lg: breakpoints).
+
+## Error Handling
+
+- **Login fails**: Show error message
+- **AI parsing fails**: Show error, user fills manually
+- **Submit fails**: Show error, user retries
+- **API down**: Network error message
 
 ## Testing
 
-**Login as employee**:
-- Username: john_smith
-- Password: password123
+**Test as Employee**:
+1. Login: john_smith / password123
+2. View balance
+3. Apply leave using AI parser ("I need Monday off")
+4. Submit
+5. View in History
 
-**Login as manager**:
-- Username: alice_manager
-- Password: password123
+**Test as Manager**:
+1. Login: alice_manager / password123
+2. View pending requests
+3. Add comment, approve/reject
+4. View team calendar
+5. View AI insights
 
-## Seed Data
+## Responsive Design
 
-- 20 users (3 managers + 17 employees)
-- 22 realistic leave requests (Pending/Approved/Rejected)
-- Leave balances for all 4 types
+Works on:
+- ✅ Desktop (1920px+)
+- ✅ Tablet (768px - 1024px)
+- ✅ Mobile (320px - 767px)
 
-Run: `python seed.py`
+Grid layout adjusts: `grid-cols-1 md:grid-cols-2 lg:grid-cols-4`
 
 ## Future Improvements
 
+- Dark mode toggle
 - Email notifications
-- PostgreSQL for production
-- Unit tests
-- Rate limiting
-- Request pagination
-- Audit logs
+- CSV export
+- Streaming AI responses (show tokens as they arrive)
+- Advanced filters (date range, leave type)
+- Bulk approve/reject
